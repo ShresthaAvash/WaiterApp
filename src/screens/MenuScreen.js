@@ -1,13 +1,18 @@
-import React, {useState, useEffect, useContext} from 'react';
-import { View, Text, FlatList, StyleSheet, Button, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
+import React, {useState, useEffect, useContext, useMemo} from 'react';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, TextInput } from 'react-native';
 import {fetchMenu} from '../api/restaurant';
 import {CartContext} from '../context/CartContext';
 import MenuItem from '../components/MenuItem';
+import QuantityModal from '../components/QuantityModal'; // Import the modal
 
 const MenuScreen = ({navigation}) => {
   const [menu, setMenu] = useState([]);
   const [loading, setLoading] = useState(true);
-  const {addItem, items: cartItems} = useContext(CartContext);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
+
+  const {addItem, activeCart} = useContext(CartContext);
 
   useEffect(() => {
     const getMenu = async () => {
@@ -23,7 +28,9 @@ const MenuScreen = ({navigation}) => {
     getMenu();
   }, []);
 
-  const cartItemCount = cartItems.reduce((sum, item) => sum + item.qty, 0);
+  const cartItemCount = useMemo(() => {
+    return activeCart.items.reduce((sum, item) => sum + item.qty, 0);
+  }, [activeCart]);
 
   React.useLayoutEffect(() => {
     navigation.setOptions({
@@ -37,6 +44,28 @@ const MenuScreen = ({navigation}) => {
     });
   }, [navigation, cartItemCount]);
 
+  const handleCustomAdd = item => {
+    setSelectedItem(item);
+    setModalVisible(true);
+  };
+
+  const handleConfirmQuantity = quantity => {
+    if (selectedItem) {
+      addItem(selectedItem, quantity);
+    }
+    setModalVisible(false);
+    setSelectedItem(null);
+  };
+
+  const filteredMenu = useMemo(() => {
+    if (!searchQuery) {
+      return menu;
+    }
+    return menu.filter(item =>
+      item.item_name.toLowerCase().includes(searchQuery.toLowerCase()),
+    );
+  }, [searchQuery, menu]);
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -46,14 +75,34 @@ const MenuScreen = ({navigation}) => {
   }
 
   return (
-    <FlatList
-      data={menu}
-      keyExtractor={item => item.id.toString()}
-      renderItem={({item}) => (
-        <MenuItem item={item} onAddToCart={() => addItem(item)} />
+    <View style={styles.container}>
+      <TextInput
+        style={styles.searchInput}
+        placeholder="Search for a food item..."
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+      />
+      <FlatList
+        data={filteredMenu}
+        keyExtractor={item => item.id.toString()}
+        renderItem={({item}) => (
+          <MenuItem
+            item={item}
+            onAdd={() => addItem(item, 1)}
+            onCustomAdd={() => handleCustomAdd(item)}
+          />
+        )}
+        contentContainerStyle={styles.listContainer}
+      />
+      {selectedItem && (
+        <QuantityModal
+          visible={modalVisible}
+          item={selectedItem}
+          onClose={() => setModalVisible(false)}
+          onConfirm={handleConfirmQuantity}
+        />
       )}
-      contentContainerStyle={styles.container}
-    />
+    </View>
   );
 };
 
@@ -64,17 +113,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   container: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  listContainer: {
     padding: 10,
+  },
+  searchInput: {
+    height: 50,
+    borderColor: '#ddd',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 15,
+    margin: 10,
+    backgroundColor: '#fff',
+    fontSize: 16,
   },
   cartButton: {
     marginRight: 15,
-    padding: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     backgroundColor: '#007BFF',
-    borderRadius: 5,
+    borderRadius: 8,
   },
   cartButtonText: {
     color: '#fff',
     fontWeight: 'bold',
+    fontSize: 16,
   },
 });
 

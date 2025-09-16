@@ -1,12 +1,43 @@
 import React, {useState, useEffect, useContext} from 'react';
-import { View, FlatList, TouchableOpacity, Text, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import {
+  View,
+  FlatList,
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+} from 'react-native';
 import {fetchTables} from '../api/restaurant';
 import {CartContext} from '../context/CartContext';
+import {AuthContext} from '../context/AuthContext'; // Import AuthContext
+
+const {width} = Dimensions.get('window');
+const itemSize = width / 3 - 20;
 
 const TableScreen = ({navigation}) => {
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
-  const {setTable} = useContext(CartContext);
+  const {setTable, carts} = useContext(CartContext);
+  const {logout} = useContext(AuthContext); // Get logout function
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+          <Text style={styles.logoutButtonText}>Logout</Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
+  
+  const handleLogout = () => {
+    Alert.alert("Logout", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "OK", onPress: () => logout() }
+    ]);
+  };
 
   useEffect(() => {
     const getTables = async () => {
@@ -30,7 +61,7 @@ const TableScreen = ({navigation}) => {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#007BFF" />
+        <ActivityIndicator size="large" color="#4a90e2" />
       </View>
     );
   }
@@ -41,13 +72,24 @@ const TableScreen = ({navigation}) => {
       keyExtractor={item => item.id.toString()}
       numColumns={3}
       contentContainerStyle={styles.container}
-      renderItem={({item}) => (
-        <TouchableOpacity
-          style={styles.tableButton}
-          onPress={() => handleSelectTable(item.id)}>
-          <Text style={styles.tableText}>{item.table_name}</Text>
-        </TouchableOpacity>
-      )}
+      renderItem={({item}) => {
+        const cartForTable = carts[item.id];
+        const hasItems = cartForTable && cartForTable.items.length > 0;
+        return (
+          <TouchableOpacity
+            style={[styles.tableButton, hasItems && styles.tableButtonActive]}
+            onPress={() => handleSelectTable(item.id)}>
+            <Text
+              style={[
+                styles.tableText,
+                hasItems && styles.tableTextActive,
+              ]}>
+              {item.table_name}
+            </Text>
+            {hasItems && <View style={styles.activeDot} />}
+          </TouchableOpacity>
+        );
+      }}
     />
   );
 };
@@ -57,26 +99,59 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#f8f9fa',
   },
   container: {
     padding: 10,
+    backgroundColor: '#f8f9fa',
   },
   tableButton: {
-    flex: 1,
+    width: itemSize,
+    height: itemSize,
     margin: 10,
-    height: 120,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    elevation: 3,
+    backgroundColor: '#ffffff',
+    borderRadius: 15,
+    elevation: 4,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 4,
+    borderWidth: 2,
+    borderColor: '#e9ecef',
+  },
+  tableButtonActive: {
+    backgroundColor: '#4a90e2',
+    borderColor: '#3a75b5',
   },
   tableText: {
-    fontSize: 20,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#343a40',
+  },
+  tableTextActive: {
+    color: '#ffffff',
+  },
+  activeDot: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#28a745',
+    borderWidth: 2,
+    borderColor: '#ffffff',
+  },
+  logoutButton: {
+    marginRight: 15,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  logoutButtonText: {
+    color: '#d9534f',
+    fontSize: 16,
     fontWeight: 'bold',
   },
 });

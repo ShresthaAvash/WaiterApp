@@ -1,11 +1,13 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 
-const CartItem = ({item, onUpdateQuantity, onRemoveItem}) => {
-  const handleQuantityChange = text => {
-    const quantity = parseInt(text, 10);
-    if (!isNaN(quantity)) {
-      onUpdateQuantity(item.id, quantity);
+const CartItem = ({ item, onUpdateQuantity, onRemoveItem }) => {
+  const handleQuantityChange = (increment) => {
+    const newQuantity = item.qty + increment;
+    if (newQuantity > 0) {
+      onUpdateQuantity(item.id, newQuantity);
+    } else {
+      onRemoveItem(item.id); // Remove if quantity becomes 0
     }
   };
 
@@ -13,18 +15,22 @@ const CartItem = ({item, onUpdateQuantity, onRemoveItem}) => {
     <View style={styles.container}>
       <View style={styles.infoContainer}>
         <Text style={styles.name}>{item.item_name}</Text>
-        <Text style={styles.price}>${item.price.toFixed(2)}</Text>
+        <Text style={styles.price}>${item.price.toFixed(2)} each</Text>
       </View>
       <View style={styles.quantityContainer}>
-        <TextInput
-          style={styles.quantityInput}
-          value={item.qty.toString()}
-          onChangeText={handleQuantityChange}
-          keyboardType="number-pad"
-        />
+        <TouchableOpacity style={styles.button} onPress={() => handleQuantityChange(-1)}>
+          <Text style={styles.buttonText}>-</Text>
+        </TouchableOpacity>
+        <Text style={styles.quantityText}>{item.qty}</Text>
+        <TouchableOpacity style={styles.button} onPress={() => handleQuantityChange(1)}>
+          <Text style={styles.buttonText}>+</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.totalContainer}>
+        <Text style={styles.totalPrice}>${(item.price * item.qty).toFixed(2)}</Text>
       </View>
       <TouchableOpacity onPress={() => onRemoveItem(item.id)} style={styles.removeButton}>
-        <Text style={styles.removeButtonText}>Remove</Text>
+        <Text style={styles.removeButtonText}>×</Text>
       </TouchableOpacity>
     </View>
   );
@@ -34,16 +40,21 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#f0f0f0',
+    backgroundColor: '#fff',
+    paddingHorizontal: 10,
+    marginBottom: 10,
+    borderRadius: 10,
   },
   infoContainer: {
     flex: 1,
   },
   name: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    color: '#333',
   },
   price: {
     fontSize: 14,
@@ -52,21 +63,42 @@ const styles = StyleSheet.create({
   quantityContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginHorizontal: 10,
   },
-  quantityInput: {
-    width: 50,
-    textAlign: 'center',
-    borderColor: '#ccc',
-    borderWidth: 1,
-    borderRadius: 5,
-    padding: 5,
+  button: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  buttonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#555',
+  },
+  quantityText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginHorizontal: 15,
+  },
+  totalContainer: {
+    width: 80,
+    alignItems: 'flex-end',
+  },
+  totalPrice: {
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   removeButton: {
-    marginLeft: 15,
-    padding: 8,
+    marginLeft: 10,
+    padding: 5,
   },
   removeButtonText: {
-    color: 'red',
+    fontSize: 24,
+    color: '#d9534f',
+    fontWeight: 'bold',
   },
 });
 

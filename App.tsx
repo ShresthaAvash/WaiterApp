@@ -1,17 +1,17 @@
 import React from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import {AuthProvider} from './src/context/AuthContext';
-import {CartProvider} from './src/context/CartContext';
+import {OrderProvider} from './src/context/OrderContext'; // <-- IMPORT OrderProvider
 import AppNavigator from './src/navigation/AppNavigator';
 
 const App = () => {
   return (
     <AuthProvider>
-      <CartProvider>
+      <OrderProvider> {/* <-- REPLACE CartProvider with OrderProvider */}
         <NavigationContainer>
           <AppNavigator />
         </NavigationContainer>
-      </CartProvider>
+      </OrderProvider>
     </AuthProvider>
   );
 };

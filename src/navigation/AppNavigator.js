@@ -1,18 +1,21 @@
 import React, {useContext} from 'react';
 import {createStackNavigator} from '@react-navigation/stack';
 import {AuthContext} from '../context/AuthContext';
+import {OrderContext} from '../context/OrderContext'; // <-- Import OrderContext
 import LoginScreen from '../screens/LoginScreen';
 import TableScreen from '../screens/TableScreen';
 import MenuScreen from '../screens/MenuScreen';
-import CartScreen from '../screens/CartScreen';
+import OrderSummaryScreen from '../screens/OrderSummaryScreen';
 import {ActivityIndicator, View, StyleSheet} from 'react-native';
 
 const Stack = createStackNavigator();
 
 const AppNavigator = () => {
-  const {token, isLoading} = useContext(AuthContext);
+  const {token, isLoading: isAuthLoading} = useContext(AuthContext);
+  const {isOrderLoading} = useContext(OrderContext); // <-- Get the new loading state
 
-  if (isLoading) {
+  // Wait for both contexts to be ready
+  if (isAuthLoading || isOrderLoading) {
     return (
       <View style={styles.loader}>
         <ActivityIndicator size="large" color="#0000ff" />
@@ -26,7 +29,7 @@ const AppNavigator = () => {
         <>
           <Stack.Screen name="Table" component={TableScreen} options={{title: 'Select a Table'}} />
           <Stack.Screen name="Menu" component={MenuScreen} options={{title: 'Menu'}} />
-          <Stack.Screen name="Cart" component={CartScreen} options={{title: 'Current Order'}} />
+          <Stack.Screen name="OrderSummary" component={OrderSummaryScreen} options={{title: 'Order Summary'}} />
         </>
       ) : (
         <Stack.Screen name="Login" component={LoginScreen} options={{headerShown: false}} />

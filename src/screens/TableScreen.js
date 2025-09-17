@@ -1,159 +1,209 @@
 import React, {useState, useEffect, useContext} from 'react';
 import {
-  View,
-  FlatList,
-  TouchableOpacity,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-  Dimensions,
+View,
+FlatList,
+TouchableOpacity,
+Text,
+StyleSheet,
+ActivityIndicator,
+Alert,
+Dimensions,
 } from 'react-native';
+import {useIsFocused} from '@react-navigation/native'; // Import useIsFocused
 import {fetchTables} from '../api/restaurant';
-import {CartContext} from '../context/CartContext';
-import {AuthContext} from '../context/AuthContext'; // Import AuthContext
+import {OrderContext} from '../context/OrderContext';
+import {AuthContext} from '../context/AuthContext';
+import {COLORS, SIZES, FONTS} from '../theme';
 
 const {width} = Dimensions.get('window');
 const itemSize = width / 3 - 20;
 
 const TableScreen = ({navigation}) => {
-  const [tables, setTables] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const {setTable, carts} = useContext(CartContext);
-  const {logout} = useContext(AuthContext); // Get logout function
+const [tables, setTables] = useState([]);
+const [loading, setLoading] = useState(true);
+const {setTable, ordersByTable} = useContext(OrderContext);
+const {logout} = useContext(AuthContext);
+const isFocused = useIsFocused(); // Hook to check if the screen is focused
 
-  useEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-          <Text style={styles.logoutButtonText}>Logout</Text>
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation]);
-  
-  const handleLogout = () => {
-    Alert.alert("Logout", "Are you sure you want to log out?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "OK", onPress: () => logout() }
-    ]);
-  };
+const getTables = async () => {
+try {
+const data = await fetchTables();
+setTables(data);
+} catch (error) {
+Alert.alert('Error', 'Could not fetch tables.');
+} finally {
+setLoading(false);
+}
+};
 
-  useEffect(() => {
-    const getTables = async () => {
-      try {
-        const data = await fetchTables();
-        setTables(data);
-      } catch (error) {
-        Alert.alert('Error', 'Could not fetch tables.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    getTables();
-  }, []);
+useEffect(() => {
+navigation.setOptions({
+headerLeft: () => null,
+headerRight: () => (
+<TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+<Text style={styles.logoutButtonText}>Logout</Text>
+</TouchableOpacity>
+),
+});
+}, [navigation, logout]);
 
-  const handleSelectTable = tableId => {
-    setTable(tableId);
-    navigation.navigate('Menu');
-  };
+// Refetch tables every time the screen comes into focus
+useEffect(() => {
+if (isFocused) {
+setLoading(true);
+getTables();
+}
+}, [isFocused]);
 
-  if (loading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#4a90e2" />
-      </View>
-    );
-  }
+const handleLogout = () => {
+Alert.alert('Logout', 'Are you sure you want to log out?', [
+{text: 'Cancel', style: 'cancel'},
+{text: 'OK', onPress: () => logout()},
+]);
+};
 
-  return (
-    <FlatList
-      data={tables}
-      keyExtractor={item => item.id.toString()}
-      numColumns={3}
-      contentContainerStyle={styles.container}
-      renderItem={({item}) => {
-        const cartForTable = carts[item.id];
-        const hasItems = cartForTable && cartForTable.items.length > 0;
-        return (
-          <TouchableOpacity
-            style={[styles.tableButton, hasItems && styles.tableButtonActive]}
-            onPress={() => handleSelectTable(item.id)}>
-            <Text
-              style={[
-                styles.tableText,
-                hasItems && styles.tableTextActive,
-              ]}>
-              {item.table_name}
-            </Text>
-            {hasItems && <View style={styles.activeDot} />}
-          </TouchableOpacity>
-        );
-      }}
-    />
-  );
+const handleSelectTable = tableId => {
+setTable(tableId);
+navigation.navigate('Menu');
+};
+
+if (loading) {
+return (
+<View style={styles.centered}>
+<ActivityIndicator size="large" color={COLORS.primary} />
+</View>
+);
+}
+
+// --- FUNCTION TO GET STATUS STYLES ---
+const getStatusStyles = status => {
+switch (status) {
+case 'ordered':
+return {
+container: styles.tableButtonOrdered,
+text: styles.tableTextActive,
+statusText: 'Ordered',
+};
+case 'served': // You can add this status in your kitchen workflow
+return {
+container: styles.tableButtonServed,
+text: styles.tableTextActive,
+statusText: 'Served',
+};
+case 'occupied':
+return {
+container: styles.tableButtonActive,
+text: styles.tableTextActive,
+statusText: 'Occupied',
+};
+default: // 'available'
+return {
+container: {},
+text: {},
+statusText: 'Available',
+};
+}
+};
+
+return (
+<FlatList
+data={tables}
+keyExtractor={item => item.id.toString()}
+numColumns={3}
+contentContainerStyle={styles.container}
+renderItem={({item}) => {
+const statusStyles = getStatusStyles(item.status);
+return (
+<TouchableOpacity
+style={[styles.tableButton, statusStyles.container]}
+onPress={() => handleSelectTable(item.id)}>
+<Text style={[styles.tableText, statusStyles.text]}>
+{item.table_name}
+</Text>
+<View style={styles.statusBadge}>
+<Text style={styles.statusBadgeText}>{statusStyles.statusText}</Text>
+</View>
+</TouchableOpacity>
+);
+}}
+/>
+);
 };
 
 const styles = StyleSheet.create({
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-  },
-  container: {
-    padding: 10,
-    backgroundColor: '#f8f9fa',
-  },
-  tableButton: {
-    width: itemSize,
-    height: itemSize,
-    margin: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 15,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    borderWidth: 2,
-    borderColor: '#e9ecef',
-  },
-  tableButtonActive: {
-    backgroundColor: '#4a90e2',
-    borderColor: '#3a75b5',
-  },
-  tableText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#343a40',
-  },
-  tableTextActive: {
-    color: '#ffffff',
-  },
-  activeDot: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#28a745',
-    borderWidth: 2,
-    borderColor: '#ffffff',
-  },
-  logoutButton: {
-    marginRight: 15,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  logoutButtonText: {
-    color: '#d9534f',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+centered: {
+flex: 1,
+justifyContent: 'center',
+alignItems: 'center',
+backgroundColor: COLORS.lightGray,
+},
+container: {
+padding: 10,
+backgroundColor: COLORS.lightGray,
+},
+tableButton: {
+width: itemSize,
+height: itemSize + 20, // Make taller for the status badge
+margin: 10,
+justifyContent: 'center',
+alignItems: 'center',
+backgroundColor: COLORS.white,
+borderRadius: SIZES.radius * 2,
+elevation: 4,
+shadowColor: '#000',
+shadowOffset: {width: 0, height: 2},
+shadowOpacity: 0.1,
+shadowRadius: 4,
+borderWidth: 2,
+borderColor: '#e9ecef',
+paddingBottom: 30, // Space for the status badge
+},
+tableButtonActive: {
+backgroundColor: COLORS.warning, // Yellow for occupied
+borderColor: '#d39e00',
+},
+tableButtonOrdered: {
+backgroundColor: '#3498db', // Blue for ordered
+borderColor: '#2980b9',
+},
+tableButtonServed: {
+backgroundColor: COLORS.primary, // Green for served/ready for bill
+borderColor: COLORS.primaryDark,
+},
+tableText: {
+...FONTS.h3,
+color: COLORS.secondary,
+},
+tableTextActive: {
+color: COLORS.white,
+},
+statusBadge: {
+position: 'absolute',
+bottom: 0,
+left: 0,
+right: 0,
+backgroundColor: 'rgba(0,0,0,0.2)',
+paddingVertical: 6,
+borderBottomLeftRadius: SIZES.radius * 2 -2, // Adjust for border
+borderBottomRightRadius: SIZES.radius * 2 -2,
+},
+statusBadgeText: {
+...FONTS.body4,
+fontSize: 12,
+color: COLORS.white,
+textAlign: 'center',
+fontWeight: 'bold',
+},
+logoutButton: {
+marginRight: 15,
+paddingHorizontal: 12,
+paddingVertical: 6,
+},
+logoutButtonText: {
+color: COLORS.danger,
+fontSize: 16,
+fontWeight: 'bold',
+},
 });
 
 export default TableScreen;

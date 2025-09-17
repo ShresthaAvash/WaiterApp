@@ -1,13 +1,15 @@
 import apiClient from './apiClient';
 
+// In WaiterApp/src/api/restaurant.js
 export const fetchTables = async () => {
-try {
-const response = await apiClient.get('/tables');
-return response.data;
-} catch (error) {
-console.error('Fetch tables API error:', error.response?.data || error.message);
-throw error;
-}
+  try {
+    // Point to the new, smarter endpoint
+    const response = await apiClient.get('/tables-status');
+    return response.data;
+  } catch (error) {
+    console.error('Fetch tables API error:', error.response?.data || error.message);
+    throw error;
+  }
 };
 
 export const fetchMenu = async () => {
@@ -29,4 +31,6 @@ return response.data;
 console.error('Clear table API error:', error.response?.data || error.message);
 throw error;
 }
+
+
 };

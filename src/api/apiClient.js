@@ -2,7 +2,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // IMPORTANT: Update this URL to include your project folder and the /public directory
-const API_BASE_URL = 'http://192.168.1.71/restaurant/public/api';
+const API_BASE_URL = 'http://192.168.1.78/restaurant/public/api';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,

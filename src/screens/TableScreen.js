@@ -10,7 +10,7 @@ import {
   Dimensions,
 } from 'react-native';
 import {useIsFocused} from '@react-navigation/native';
-import {fetchTables} from '../api/restaurant';
+import {fetchTables, clearTableStatus} from '../api/restaurant'; // Import clearTableStatus
 import {OrderContext} from '../context/OrderContext';
 import {AuthContext} from '../context/AuthContext';
 import {COLORS, SIZES, FONTS} from '../theme';
@@ -21,7 +21,7 @@ const itemSize = width / 3 - 20;
 const TableScreen = ({navigation}) => {
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
-  const {setTable} = useContext(OrderContext);
+  const {setTable, clearTableOrders} = useContext(OrderContext);
   const {logout} = useContext(AuthContext);
   const isFocused = useIsFocused();
 
@@ -32,10 +32,7 @@ const TableScreen = ({navigation}) => {
     } catch (error) {
       console.error("Failed to fetch tables:", error);
     } finally {
-      // --- THIS IS THE FIX ---
-      // Ensure loading is always set to false after the fetch attempt.
       setLoading(false);
-      // --- END OF FIX ---
     }
   };
   
@@ -53,22 +50,46 @@ const TableScreen = ({navigation}) => {
   useEffect(() => {
     let interval;
     if (isFocused) {
-      setLoading(true); // Set loading true only on initial focus
+      setLoading(true);
       getTables();
 
       interval = setInterval(() => {
-        // Subsequent polls will not show the main loader
         getTables();
       }, 7000);
     }
     
-    // Cleanup interval when the screen loses focus
     return () => {
       if (interval) {
         clearInterval(interval);
       }
     };
   }, [isFocused]);
+  
+    const handleClearTable = (table) => {
+        if (table.status === 'served' || table.status === 'bill_paid') {
+            Alert.alert(
+                'Clear Table',
+                `Are you sure you want to clear ${table.table_name}? This will mark it as available.`,
+                [
+                    {text: 'Cancel', style: 'cancel'},
+                    { 
+                        text: 'OK', 
+                        onPress: async () => {
+                            try {
+                                await clearTableStatus(table.id);
+                                clearTableOrders(table.id);
+                                getTables(); // Refresh the table list immediately
+                            } catch (error) {
+                                Alert.alert('Error', 'Failed to clear the table.');
+                            }
+                        }
+                    },
+                ]
+            );
+        } else if (table.status !== 'available') {
+             Alert.alert('Cannot Clear Table', 'This table has active orders and cannot be cleared yet.');
+        }
+    };
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to log out?', [
@@ -89,35 +110,47 @@ const TableScreen = ({navigation}) => {
       </View>
     );
   }
-
-  const getStatusStyles = status => {
-    switch (status) {
-      case 'ordered':
-        return {
-          container: styles.tableButtonOrdered,
-          text: styles.tableTextActive,
-          statusText: 'Ordered',
-        };
-      case 'served':
-        return {
-          container: styles.tableButtonServed,
-          text: styles.tableTextActive,
-          statusText: 'Served',
-        };
-      case 'occupied':
-        return {
-          container: styles.tableButtonActive,
-          text: styles.tableTextActive,
-          statusText: 'Occupied',
-        };
-      default:
-        return {
-          container: {},
-          text: {},
-          statusText: 'Available',
-        };
-    }
-  };
+  
+    const getStatusStyles = status => {
+        switch (status) {
+            case 'ordered':
+                return {
+                    container: styles.tableButtonOrdered,
+                    text: styles.tableTextActive,
+                    statusText: 'Ordered',
+                };
+            case 'preparing':
+                return {
+                    container: styles.tableButtonPreparing,
+                    text: styles.tableTextActive,
+                    statusText: 'Preparing',
+                };
+            case 'served':
+                return {
+                    container: styles.tableButtonServed,
+                    text: styles.tableTextActive,
+                    statusText: 'Served',
+                };
+            case 'bill_requested':
+                return {
+                    container: styles.tableButtonBillRequested,
+                    text: styles.tableTextActive,
+                    statusText: 'Bill Requested',
+                };
+            case 'occupied':
+                return {
+                    container: styles.tableButtonActive,
+                    text: styles.tableTextActive,
+                    statusText: 'Occupied',
+                };
+            default:
+                return {
+                    container: {},
+                    text: {},
+                    statusText: 'Available',
+                };
+        }
+    };
 
   return (
     <FlatList
@@ -130,7 +163,8 @@ const TableScreen = ({navigation}) => {
         return (
           <TouchableOpacity
             style={[styles.tableButton, statusStyles.container]}
-            onPress={() => handleSelectTable(item.id)}>
+            onPress={() => handleSelectTable(item.id)}
+            onLongPress={() => handleClearTable(item)}>
             <Text style={[styles.tableText, statusStyles.text]}>
               {item.table_name}
             </Text>
@@ -181,9 +215,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#3498db',
     borderColor: '#2980b9',
   },
+  tableButtonPreparing: {
+    backgroundColor: '#e67e22', // A different shade of orange
+    borderColor: '#d35400',
+  },
   tableButtonServed: {
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primaryDark,
+  },
+  tableButtonBillRequested: {
+    backgroundColor: '#95a5a6', // A neutral grey
+    borderColor: '#7f8c8d',
   },
   tableText: {
     ...FONTS.h3,

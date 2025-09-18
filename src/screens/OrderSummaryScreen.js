@@ -1,4 +1,4 @@
-import React, {useContext, useState, useMemo} from 'react';
+import React, {useContext, useState, useMemo, useEffect} from 'react';
 import {
   View,
   Text,
@@ -8,18 +8,25 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
+import {useIsFocused} from '@react-navigation/native';
 import {OrderContext} from '../context/OrderContext';
 import CartItem from '../components/CartItem';
 import {submitOrder} from '../api/orders';
-// We no longer need clearTableStatus from here
 import {COLORS, FONTS, SIZES} from '../theme';
 
 const OrderSummaryScreen = ({navigation}) => {
-  // Remove clearTableOrders and activeTableId, they are not needed here
-  const {activeOrder, sendOrderToKitchen, updateQuantity, removeItem} =
+  const {activeOrder, sendOrderToKitchen, updateQuantity, removeItem, refreshPlacedItems} =
     useContext(OrderContext);
   const [loading, setLoading] = useState(false);
+  const isFocused = useIsFocused();
   
+  // --- ADD THIS EFFECT TO REFRESH DATA ---
+  useEffect(() => {
+    if (isFocused) {
+      refreshPlacedItems();
+    }
+  }, [isFocused]);
+
   const {newItems = [], placedItems = []} = activeOrder || {};
 
   const total = useMemo(
@@ -38,7 +45,6 @@ const OrderSummaryScreen = ({navigation}) => {
     setLoading(true);
     try {
       await sendOrderToKitchen();
-      // On success, simply navigate back to the Table screen
       Alert.alert('Success', 'Order sent to kitchen!', [
           { text: 'OK', onPress: () => navigation.navigate('Table') }
       ]);
@@ -49,10 +55,17 @@ const OrderSummaryScreen = ({navigation}) => {
     }
   };
 
+  // --- MODIFY THIS LOGIC TO FILTER CANCELLED ITEMS ---
+  const visiblePlacedItems = useMemo(
+    () => placedItems.filter(item => item.status !== 'cancelled'),
+    [placedItems]
+  );
+
   const sections = [
     {title: 'New Items (Not Sent)', data: newItems, isEditable: true},
-    {title: 'Sent to Kitchen', data: placedItems, isEditable: false},
+    {title: 'Sent to Kitchen', data: visiblePlacedItems, isEditable: false},
   ].filter(section => section.data.length > 0);
+  // --- END OF MODIFICATION ---
 
   return (
     <View style={styles.container}>
@@ -79,8 +92,6 @@ const OrderSummaryScreen = ({navigation}) => {
         />
       )}
 
-      {/* --- UI CHANGE --- */}
-      {/* We only show the footer if there are new items to send */}
       {newItems.length > 0 && (
         <View style={styles.summaryContainer}>
             <View style={styles.totalRow}>
@@ -98,7 +109,6 @@ const OrderSummaryScreen = ({navigation}) => {
             )}
         </View>
       )}
-       {/* --- END OF UI CHANGE --- */}
     </View>
   );
 };

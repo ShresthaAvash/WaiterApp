@@ -31,6 +31,15 @@ return response.data;
 console.error('Clear table API error:', error.response?.data || error.message);
 throw error;
 }
+};
 
-
+// --- ADD THIS AS WELL ---
+export const fetchOrderForTable = async (tableId) => {
+  try {
+    const response = await apiClient.get(`/tables/${tableId}/order`);
+    return response.data;
+  } catch (error) {
+    console.error('Fetch order for table API error:', error.response?.data || error.message);
+    throw error;
+  }
 };

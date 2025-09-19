@@ -2,11 +2,12 @@ import React, {useState, useEffect, useContext, useMemo, useRef} from 'react';
 import { View, Text, SectionList, StyleSheet, Alert, TouchableOpacity, TextInput, ActivityIndicator, ScrollView } from 'react-native';
 import {fetchMenu} from '../api/restaurant';
 import {OrderContext} from '../context/OrderContext';
+import {AuthContext} from '../context/AuthContext';
 import MenuItem from '../components/MenuItem';
 import NotesModal from '../components/NotesModal';
 import {COLORS, FONTS, SIZES} from '../theme';
 
-const MenuScreen = ({navigation}) => {
+const MenuScreen = ({route, navigation}) => {
   const [menu, setMenu] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -17,13 +18,27 @@ const MenuScreen = ({navigation}) => {
   const sectionListRef = useRef(null);
 
   const {addItemToOrder, activeOrder} = useContext(OrderContext);
+  const { waiter } = useContext(AuthContext);
+
+  const { tableWaiterId, tableName, isCustomerOccupied } = route.params;
+
+  const isTableLockedByWaiter = tableWaiterId && tableWaiterId !== waiter.id;
+  const isTableLocked = isTableLockedByWaiter || isCustomerOccupied;
+
+  const lockMessage = useMemo(() => {
+    if (isTableLockedByWaiter) {
+      return 'This table is being served by another waiter.';
+    }
+    if (isCustomerOccupied) {
+      return 'This table is being used by a customer.';
+    }
+    return '';
+  }, [isTableLockedByWaiter, isCustomerOccupied]);
 
   useEffect(() => {
     const getMenu = async () => {
       try {
         const data = await fetchMenu();
-        // The API now returns categories, each with an 'item' array
-        // We rename 'category_name' to 'title' and 'item' to 'data' for the SectionList
         const formattedMenu = data.map(category => ({
             title: category.category_name,
             data: category.item,
@@ -47,15 +62,18 @@ const MenuScreen = ({navigation}) => {
 
   React.useLayoutEffect(() => {
     navigation.setOptions({
+      title: tableName,
       headerRight: () => (
         <TouchableOpacity
           onPress={() => navigation.navigate('OrderSummary')}
-          style={styles.cartButton}>
+          style={[styles.cartButton, isTableLocked && styles.disabledButton]}
+          disabled={isTableLocked}
+        >
           <Text style={styles.cartButtonText}>Order ({newItemsCount})</Text>
         </TouchableOpacity>
       ),
     });
-  }, [navigation, newItemsCount]);
+  }, [navigation, newItemsCount, isTableLocked, tableName]);
 
   const handleAddWithNotes = item => {
     setSelectedItem(item);
@@ -73,12 +91,10 @@ const MenuScreen = ({navigation}) => {
     if (!searchQuery.trim()) {
       return menu;
     }
-    // If searching, flatten the list and filter
     const allItems = menu.flatMap(section => section.data);
     const filteredItems = allItems.filter(item =>
         item.item_name.toLowerCase().includes(searchQuery.toLowerCase())
     );
-    // Return in a structure SectionList can use, but without category headers
     return [{ title: 'Search Results', data: filteredItems }];
   }, [searchQuery, menu]);
 
@@ -97,7 +113,7 @@ const MenuScreen = ({navigation}) => {
     sectionListRef.current.scrollToLocation({
         sectionIndex: index,
         itemIndex: 0,
-        viewOffset: 10, // To offset from the top
+        viewOffset: 10,
     });
   };
 
@@ -111,6 +127,12 @@ const MenuScreen = ({navigation}) => {
 
   return (
     <View style={styles.container}>
+      {isTableLocked && (
+        <View style={styles.lockedBanner}>
+          <Text style={styles.lockedBannerText}>{lockMessage}</Text>
+        </View>
+      )}
+      
       <TextInput
         style={styles.searchInput}
         placeholder="Search for a food item..."
@@ -119,7 +141,6 @@ const MenuScreen = ({navigation}) => {
         onChangeText={setSearchQuery}
       />
       
-      {/* Category Filter Buttons */}
       {!searchQuery.trim() && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryContainer}>
             <TouchableOpacity
@@ -151,10 +172,10 @@ const MenuScreen = ({navigation}) => {
             quantity={itemQuantities[item.id] || 0}
             onAdd={() => addItemToOrder(item, 1, '')}
             onAddWithNotes={() => handleAddWithNotes(item)}
+            disabled={isTableLocked}
           />
         )}
         renderSectionHeader={({section: {title}}) => (
-            // Only show headers if not searching
             !searchQuery.trim() ? <Text style={styles.sectionHeader}>{title}</Text> : null
         )}
         contentContainerStyle={styles.listContainer}
@@ -209,6 +230,19 @@ const styles = StyleSheet.create({
   cartButtonText: {
     color: COLORS.white,
     ...FONTS.h4,
+  },
+  disabledButton: {
+    backgroundColor: COLORS.gray,
+  },
+  lockedBanner: {
+    backgroundColor: COLORS.danger,
+    padding: 10,
+    alignItems: 'center',
+  },
+  lockedBannerText: {
+    color: COLORS.white,
+    ...FONTS.body4,
+    fontWeight: 'bold',
   },
   categoryContainer: {
       paddingHorizontal: 10,

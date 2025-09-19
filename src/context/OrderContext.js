@@ -183,6 +183,11 @@ export const OrderProvider = ({children}) => {
     newItems: [],
     placedItems: [],
   };
+  
+  const hasUnsentItems = (tableId) => {
+    const order = state.ordersByTable[tableId];
+    return order && order.newItems && order.newItems.length > 0;
+  };
 
   return (
     <OrderContext.Provider
@@ -196,7 +201,8 @@ export const OrderProvider = ({children}) => {
         sendOrderToKitchen,
         clearTableOrders,
         activeOrder,
-        refreshPlacedItems, // <-- Expose the new function
+        hasUnsentItems,
+        refreshPlacedItems, 
       }}>
       {children}
     </OrderContext.Provider>

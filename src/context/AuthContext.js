@@ -1,6 +1,6 @@
 import React, {createContext, useState, useEffect} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {loginWaiter} from '../api/auth';
+import {loginWaiter, getWaiterProfile} from '../api/auth'; // Import getWaiterProfile
 
 export const AuthContext = createContext();
 
@@ -10,21 +10,28 @@ export const AuthProvider = ({children}) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for stored token on app start
-    const loadToken = async () => {
+    // Check for stored token and fetch user profile on app start
+    const loadStoredData = async () => {
       try {
         const storedToken = await AsyncStorage.getItem('waiterToken');
         if (storedToken) {
+          // Set token first so API calls are authenticated
           setToken(storedToken);
-          // You could also fetch waiter data here to verify the token
+          // Fetch waiter data using the token
+          const profile = await getWaiterProfile();
+          setWaiter(profile);
         }
       } catch (e) {
-        console.error("Failed to load token from storage", e);
+        console.error("Failed to load token/profile.", e);
+        // If fetching the profile fails, the token is likely invalid, so clear it.
+        await AsyncStorage.removeItem('waiterToken');
+        setToken(null);
+        setWaiter(null);
       } finally {
         setIsLoading(false);
       }
     };
-    loadToken();
+    loadStoredData();
   }, []);
 
   const login = async (email, password) => {
@@ -32,7 +39,7 @@ export const AuthProvider = ({children}) => {
       const data = await loginWaiter(email, password);
       if (data.access_token) {
         setToken(data.access_token);
-        setWaiter(data.waiter); // Assuming API returns waiter details
+        setWaiter(data.waiter); // API returns waiter details on login
         await AsyncStorage.setItem('waiterToken', data.access_token);
         return true;
       }

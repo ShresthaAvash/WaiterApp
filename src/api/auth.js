@@ -12,3 +12,14 @@ export const loginWaiter = async (email, password) => {
     throw error;
   }
 };
+
+// --- ADD THIS NEW FUNCTION ---
+export const getWaiterProfile = async () => {
+    try {
+        const response = await apiClient.get('/user');
+        return response.data;
+    } catch (error) {
+        console.error('Get waiter profile API error:', error.response?.data || error.message);
+        throw error;
+    }
+};

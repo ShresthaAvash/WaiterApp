@@ -1,7 +1,8 @@
-import React, {useState, useEffect, useContext} from 'react';
+import React, { useState, useEffect, useContext, useMemo } from 'react';
 import {
   View,
   FlatList,
+  ScrollView,
   TouchableOpacity,
   Text,
   StyleSheet,
@@ -9,20 +10,22 @@ import {
   Alert,
   Dimensions,
 } from 'react-native';
-import {useIsFocused} from '@react-navigation/native';
-import {fetchTables, clearTableStatus} from '../api/restaurant'; // Import clearTableStatus
-import {OrderContext} from '../context/OrderContext';
-import {AuthContext} from '../context/AuthContext';
-import {COLORS, SIZES, FONTS} from '../theme';
+import { useIsFocused } from '@react-navigation/native';
+import { fetchTables, clearTableStatus } from '../api/restaurant';
+import { OrderContext } from '../context/OrderContext';
+import { AuthContext } from '../context/AuthContext';
+import { COLORS, SIZES, FONTS } from '../theme';
 
-const {width} = Dimensions.get('window');
-const itemSize = width / 3 - 20;
+const { width } = Dimensions.get('window');
+const numColumns = 3;
+const itemMargin = 10;
+const itemSize = (width - itemMargin * 4) / numColumns;
 
-const TableScreen = ({navigation}) => {
+const TableScreen = ({ navigation }) => {
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
-  const {setTable, clearTableOrders} = useContext(OrderContext);
-  const {logout} = useContext(AuthContext);
+  const { setTable, clearTableOrders, hasUnsentItems } = useContext(OrderContext);
+  const { logout, waiter } = useContext(AuthContext);
   const isFocused = useIsFocused();
 
   const getTables = async () => {
@@ -35,7 +38,7 @@ const TableScreen = ({navigation}) => {
       setLoading(false);
     }
   };
-  
+
   useEffect(() => {
     navigation.setOptions({
       headerLeft: () => null,
@@ -64,32 +67,45 @@ const TableScreen = ({navigation}) => {
       }
     };
   }, [isFocused]);
-  
-    const handleClearTable = (table) => {
-        if (table.status === 'served' || table.status === 'bill_paid') {
-            Alert.alert(
-                'Clear Table',
-                `Are you sure you want to clear ${table.table_name}? This will mark it as available.`,
-                [
-                    {text: 'Cancel', style: 'cancel'},
-                    { 
-                        text: 'OK', 
-                        onPress: async () => {
-                            try {
-                                await clearTableStatus(table.id);
-                                clearTableOrders(table.id);
-                                getTables(); // Refresh the table list immediately
-                            } catch (error) {
-                                Alert.alert('Error', 'Failed to clear the table.');
-                            }
-                        }
-                    },
-                ]
-            );
-        } else if (table.status !== 'available') {
-             Alert.alert('Cannot Clear Table', 'This table has active orders and cannot be cleared yet.');
+
+  const handleClearTable = (table) => {
+    const hasPending = hasUnsentItems(table.id);
+    const canBeCleared = ['occupied', 'served', 'bill_paid'].includes(table.status) || hasPending;
+    
+    if (canBeCleared) {
+        let alertTitle = 'Clear Table';
+        let alertMessage = `Are you sure you want to clear ${table.table_name}? This will mark it as available.`;
+
+        if (hasPending && !['ordered', 'preparing', 'served', 'bill_paid'].includes(table.status)) {
+            alertTitle = 'Discard Items';
+            alertMessage = `Are you sure you want to discard the unsent items for ${table.table_name}?`;
         }
-    };
+        
+        Alert.alert(
+            alertTitle,
+            alertMessage,
+            [
+                {text: 'Cancel', style: 'cancel'},
+                { 
+                    text: 'OK', 
+                    onPress: async () => {
+                        try {
+                            if (table.status !== 'available') {
+                                await clearTableStatus(table.id);
+                            }
+                            clearTableOrders(table.id);
+                            getTables();
+                        } catch (error) {
+                            Alert.alert('Error', 'Failed to clear the table.');
+                        }
+                    }
+                },
+            ]
+        );
+    } else if (table.status !== 'available') {
+         Alert.alert('Cannot Clear Table', 'This table has active orders that have been sent to the kitchen and cannot be cleared from here.');
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to log out?', [
@@ -98,10 +114,31 @@ const TableScreen = ({navigation}) => {
     ]);
   };
 
-  const handleSelectTable = tableId => {
-    setTable(tableId);
-    navigation.navigate('Menu');
+  const handleSelectTable = table => {
+    setTable(table.id);
+    navigation.navigate('Menu', { 
+        tableWaiterId: table.waiter_id, 
+        tableName: table.table_name,
+        isCustomerOccupied: !!table.table_token
+    });
   };
+
+  const { myTables, otherTables } = useMemo(() => {
+    if (!waiter) return { myTables: [], otherTables: [] };
+
+    const my = [];
+    const others = [];
+
+    tables.forEach(table => {
+      if (table.waiter_id === waiter.id || hasUnsentItems(table.id)) {
+        my.push(table);
+      } else {
+        others.push(table);
+      }
+    });
+
+    return { myTables: my, otherTables: others };
+  }, [tables, waiter, hasUnsentItems]);
 
   if (loading) {
     return (
@@ -110,74 +147,87 @@ const TableScreen = ({navigation}) => {
       </View>
     );
   }
-  
-    const getStatusStyles = status => {
-        switch (status) {
-            case 'ordered':
-                return {
-                    container: styles.tableButtonOrdered,
-                    text: styles.tableTextActive,
-                    statusText: 'Ordered',
-                };
-            case 'preparing':
-                return {
-                    container: styles.tableButtonPreparing,
-                    text: styles.tableTextActive,
-                    statusText: 'Preparing',
-                };
-            case 'served':
-                return {
-                    container: styles.tableButtonServed,
-                    text: styles.tableTextActive,
-                    statusText: 'Served',
-                };
-            case 'bill_requested':
-                return {
-                    container: styles.tableButtonBillRequested,
-                    text: styles.tableTextActive,
-                    statusText: 'Bill Requested',
-                };
-            case 'occupied':
-                return {
-                    container: styles.tableButtonActive,
-                    text: styles.tableTextActive,
-                    statusText: 'Occupied',
-                };
-            default:
-                return {
-                    container: {},
-                    text: {},
-                    statusText: 'Available',
-                };
-        }
-    };
+
+  const getStatusStyles = (status, hasPending) => {
+    const effectiveStatus = hasPending ? 'occupied' : status;
+    switch (effectiveStatus) {
+      case 'ordered':
+        return { container: styles.tableButtonOrdered, text: styles.tableTextActive, statusText: 'Ordered' };
+      case 'preparing':
+        return { container: styles.tableButtonPreparing, text: styles.tableTextActive, statusText: 'Preparing' };
+      case 'served':
+        return { container: styles.tableButtonServed, text: styles.tableTextActive, statusText: 'Served' };
+      case 'occupied':
+        return { container: styles.tableButtonActive, text: styles.tableTextActive, statusText: 'Occupied' };
+      default:
+        return { container: {}, text: {}, statusText: 'Available' };
+    }
+  };
+
+  const renderTable = ({ item }) => {
+    const hasPending = hasUnsentItems(item.id);
+    const statusStyles = getStatusStyles(item.status, hasPending);
+    const isMyTable = item.waiter_id === waiter.id;
+
+    const startTime = item.start_time ? new Date(item.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
+
+    return (
+      <TouchableOpacity
+        style={[styles.tableButton, statusStyles.container]}
+        onPress={() => handleSelectTable(item)}
+        onLongPress={() => handleClearTable(item)}>
+        
+        {isMyTable && <View style={styles.myTableIndicator} />}
+        
+        <Text style={[styles.tableText, statusStyles.text]}>{item.table_name}</Text>
+        
+        {startTime && <Text style={styles.timeText}>{startTime}</Text>}
+        
+        {item.waiter_name && <Text style={styles.waiterText}>{item.waiter_name}</Text>}
+        
+        <View style={styles.statusBadge}>
+          <Text style={styles.statusBadgeText}>{statusStyles.statusText}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
-    <FlatList
-      data={tables}
-      keyExtractor={item => item.id.toString()}
-      numColumns={3}
-      contentContainerStyle={styles.container}
-      renderItem={({item}) => {
-        const statusStyles = getStatusStyles(item.status);
-        return (
-          <TouchableOpacity
-            style={[styles.tableButton, statusStyles.container]}
-            onPress={() => handleSelectTable(item.id)}
-            onLongPress={() => handleClearTable(item)}>
-            <Text style={[styles.tableText, statusStyles.text]}>
-              {item.table_name}
-            </Text>
-            <View style={styles.statusBadge}>
-                <Text style={styles.statusBadgeText}>{statusStyles.statusText}</Text>
-            </View>
-          </TouchableOpacity>
-        );
-      }}
-    />
+    <ScrollView style={styles.scrollViewContainer}>
+      {myTables.length > 0 && (
+        <View>
+          <Text style={styles.sectionHeader}>My Tables</Text>
+          <FlatList
+            data={myTables}
+            renderItem={renderTable}
+            keyExtractor={(item) => item.id.toString()}
+            numColumns={numColumns}
+            scrollEnabled={false}
+            contentContainerStyle={styles.listContainer}
+          />
+        </View>
+      )}
+      {otherTables.length > 0 && (
+        <View>
+          <Text style={styles.sectionHeader}>Other Tables</Text>
+          <FlatList
+            data={otherTables}
+            renderItem={renderTable}
+            keyExtractor={(item) => item.id.toString()}
+            numColumns={numColumns}
+            scrollEnabled={false}
+            contentContainerStyle={styles.listContainer}
+          />
+        </View>
+      )}
+      {tables.length === 0 && !loading && (
+          <View style={styles.centered}>
+              <Text>No tables found.</Text>
+          </View>
+      )}
+    </ScrollView>
   );
 };
-
 
 const styles = StyleSheet.create({
   centered: {
@@ -185,15 +235,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: COLORS.lightGray,
+    paddingTop: 50,
   },
-  container: {
-    padding: 10,
+  scrollViewContainer: {
+    flex: 1,
     backgroundColor: COLORS.lightGray,
+  },
+  listContainer: {
+    paddingHorizontal: itemMargin / 2,
+  },
+  sectionHeader: {
+    ...FONTS.h2,
+    color: COLORS.secondary,
+    paddingHorizontal: 15,
+    paddingTop: 20,
+    paddingBottom: 10,
   },
   tableButton: {
     width: itemSize,
     height: itemSize + 20,
-    margin: 10,
+    margin: itemMargin / 2,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: COLORS.white,
@@ -205,52 +266,60 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     borderWidth: 2,
     borderColor: '#e9ecef',
-    paddingBottom: 30,
+    paddingBottom: 25,
   },
-  tableButtonActive: {
-    backgroundColor: COLORS.warning,
-    borderColor: '#d39e00',
-  },
-  tableButtonOrdered: {
-    backgroundColor: '#3498db',
-    borderColor: '#2980b9',
-  },
-  tableButtonPreparing: {
-    backgroundColor: '#e67e22', // A different shade of orange
-    borderColor: '#d35400',
-  },
-  tableButtonServed: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primaryDark,
-  },
-  tableButtonBillRequested: {
-    backgroundColor: '#95a5a6', // A neutral grey
-    borderColor: '#7f8c8d',
+  myTableIndicator: {
+    position: 'absolute',
+    top: -5,
+    left: -5,
+    width: 15,
+    height: 15,
+    borderRadius: 7.5,
+    backgroundColor: COLORS.danger,
+    borderWidth: 2,
+    borderColor: COLORS.white,
   },
   tableText: {
     ...FONTS.h3,
     color: COLORS.secondary,
+    marginBottom: 2,
   },
   tableTextActive: {
     color: COLORS.white,
   },
+  timeText: {
+    fontSize: 11,
+    color: '#6c757d',
+    position: 'absolute',
+    top: 8,
+    right: 8,
+  },
+  waiterText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#495057',
+    marginTop: 4,
+  },
   statusBadge: {
-      position: 'absolute',
-      bottom: 0,
-      left: 0,
-      right: 0,
-      backgroundColor: 'rgba(0,0,0,0.2)',
-      paddingVertical: 6,
-      borderBottomLeftRadius: SIZES.radius * 2 -2,
-      borderBottomRightRadius: SIZES.radius * 2 -2,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    paddingVertical: 6,
+    borderBottomLeftRadius: SIZES.radius * 2 - 2,
+    borderBottomRightRadius: SIZES.radius * 2 - 2,
   },
   statusBadgeText: {
-      ...FONTS.body4,
-      fontSize: 12,
-      color: COLORS.white,
-      textAlign: 'center',
-      fontWeight: 'bold',
+    fontSize: 12,
+    color: COLORS.white,
+    textAlign: 'center',
+    fontWeight: 'bold',
   },
+  tableButtonActive: { backgroundColor: COLORS.warning, borderColor: '#d39e00' },
+  tableButtonOrdered: { backgroundColor: '#3498db', borderColor: '#2980b9' },
+  tableButtonPreparing: { backgroundColor: '#e67e22', borderColor: '#d35400' },
+  tableButtonServed: { backgroundColor: COLORS.primary, borderColor: COLORS.primaryDark },
   logoutButton: {
     marginRight: 15,
     paddingHorizontal: 12,
@@ -262,5 +331,5 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-
+  
 export default TableScreen;

@@ -170,6 +170,7 @@ const TableScreen = ({ navigation }) => {
     const isMyTable = item.waiter_id === waiter.id;
 
     const startTime = item.start_time ? new Date(item.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
+    const tableToken = item.table_token;
 
     return (
       <TouchableOpacity
@@ -181,9 +182,11 @@ const TableScreen = ({ navigation }) => {
         
         <Text style={[styles.tableText, statusStyles.text]}>{item.table_name}</Text>
         
-        {startTime && <Text style={styles.timeText}>{startTime}</Text>}
+        {tableToken && item.status !== 'available' && <Text style={[styles.tokenText, statusStyles.text]}>Token: {tableToken}</Text>}
         
-        {item.waiter_name && <Text style={styles.waiterText}>{item.waiter_name}</Text>}
+        {startTime && <Text style={[styles.timeText, statusStyles.text]}>{startTime}</Text>}
+        
+        {item.waiter_name && <Text style={[styles.waiterText, statusStyles.text]}>{item.waiter_name}</Text>}
         
         <View style={styles.statusBadge}>
           <Text style={styles.statusBadgeText}>{statusStyles.statusText}</Text>
@@ -286,6 +289,12 @@ const styles = StyleSheet.create({
   },
   tableTextActive: {
     color: COLORS.white,
+  },
+  tokenText: {
+    ...FONTS.body4,
+    color: COLORS.secondary,
+    fontWeight: 'bold',
+    marginTop: 4,
   },
   timeText: {
     fontSize: 11,

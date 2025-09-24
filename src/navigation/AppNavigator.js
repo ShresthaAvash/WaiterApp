@@ -1,7 +1,6 @@
 import React, {useContext} from 'react';
 import {createStackNavigator} from '@react-navigation/stack';
 import {AuthContext} from '../context/AuthContext';
-import {OrderContext} from '../context/OrderContext'; // <-- Import OrderContext
 import LoginScreen from '../screens/LoginScreen';
 import TableScreen from '../screens/TableScreen';
 import MenuScreen from '../screens/MenuScreen';
@@ -11,11 +10,10 @@ import {ActivityIndicator, View, StyleSheet} from 'react-native';
 const Stack = createStackNavigator();
 
 const AppNavigator = () => {
-  const {token, isLoading: isAuthLoading} = useContext(AuthContext);
-  const {isOrderLoading} = useContext(OrderContext); // <-- Get the new loading state
+  const {token, isLoading} = useContext(AuthContext);
 
-  // Wait for both contexts to be ready
-  if (isAuthLoading || isOrderLoading) {
+  // We only need to check the authentication loading state here.
+  if (isLoading) {
     return (
       <View style={styles.loader}>
         <ActivityIndicator size="large" color="#0000ff" />

@@ -1,5 +1,6 @@
 import React, {useState, useEffect, useContext, useMemo, useRef} from 'react';
 import { View, Text, SectionList, StyleSheet, Alert, TouchableOpacity, TextInput, ActivityIndicator, ScrollView } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import {fetchMenu} from '../api/restaurant';
 import {OrderContext} from '../context/OrderContext';
 import {AuthContext} from '../context/AuthContext';
@@ -17,8 +18,9 @@ const MenuScreen = ({route, navigation}) => {
 
   const sectionListRef = useRef(null);
 
-  const {addItemToOrder, activeOrder} = useContext(OrderContext);
+  const {addItemToOrder, activeOrder, refreshPlacedItems} = useContext(OrderContext);
   const { waiter } = useContext(AuthContext);
+  const isFocused = useIsFocused();
 
   const { tableWaiterId, tableName, isCustomerOccupied } = route.params;
 
@@ -34,6 +36,13 @@ const MenuScreen = ({route, navigation}) => {
     }
     return '';
   }, [isTableLockedByWaiter, isCustomerOccupied]);
+
+  useEffect(() => {
+    // Refresh the list of items already sent to the kitchen when the screen comes into focus
+    if (isFocused) {
+      refreshPlacedItems();
+    }
+  }, [isFocused]);
 
   useEffect(() => {
     const getMenu = async () => {
@@ -52,13 +61,16 @@ const MenuScreen = ({route, navigation}) => {
     };
     getMenu();
   }, []);
-
-  const newItemsCount = useMemo(() => {
-    if (!activeOrder || !activeOrder.newItems) {
+  
+  const totalItemsCount = useMemo(() => {
+    if (!activeOrder) {
         return 0;
     }
-    return activeOrder.newItems.reduce((sum, item) => sum + item.qty, 0);
-  }, [JSON.stringify(activeOrder.newItems)]);
+    const newItemsCount = activeOrder.newItems?.reduce((sum, item) => sum + item.qty, 0) || 0;
+    const placedItemsCount = activeOrder.placedItems?.filter(item => item.status !== 'cancelled').reduce((sum, item) => sum + item.qty, 0) || 0;
+    
+    return newItemsCount + placedItemsCount;
+  }, [activeOrder.newItems, activeOrder.placedItems]);
 
   React.useLayoutEffect(() => {
     navigation.setOptions({
@@ -69,11 +81,11 @@ const MenuScreen = ({route, navigation}) => {
           style={[styles.cartButton, isTableLocked && styles.disabledButton]}
           disabled={isTableLocked}
         >
-          <Text style={styles.cartButtonText}>Order ({newItemsCount})</Text>
+          <Text style={styles.cartButtonText}>Order ({totalItemsCount})</Text>
         </TouchableOpacity>
       ),
     });
-  }, [navigation, newItemsCount, isTableLocked, tableName]);
+  }, [navigation, totalItemsCount, isTableLocked, tableName]);
 
   const handleAddWithNotes = item => {
     setSelectedItem(item);
@@ -88,15 +100,27 @@ const MenuScreen = ({route, navigation}) => {
   };
   
   const filteredMenu = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return menu;
+    let sectionsToRender = menu;
+
+    if (activeCategory !== 'all') {
+        sectionsToRender = menu.filter(section => section.title === activeCategory);
     }
-    const allItems = menu.flatMap(section => section.data);
-    const filteredItems = allItems.filter(item =>
-        item.item_name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    return [{ title: 'Search Results', data: filteredItems }];
-  }, [searchQuery, menu]);
+
+    if (!searchQuery.trim()) {
+        return sectionsToRender;
+    }
+
+    const lowercasedQuery = searchQuery.toLowerCase();
+    const filteredSections = sectionsToRender.map(section => {
+        const filteredData = section.data.filter(item => 
+            item.item_name.toLowerCase().includes(lowercasedQuery)
+        );
+        return { ...section, data: filteredData };
+    }).filter(section => section.data.length > 0);
+
+    return filteredSections;
+
+  }, [searchQuery, menu, activeCategory]);
 
   const itemQuantities = useMemo(() => {
       const quantities = {};
@@ -106,15 +130,19 @@ const MenuScreen = ({route, navigation}) => {
           });
       }
       return quantities;
-  }, [JSON.stringify(activeOrder.newItems)]);
+  }, [activeOrder.newItems]);
 
-  const scrollToCategory = (index) => {
-    setActiveCategory(menu[index].title);
-    sectionListRef.current.scrollToLocation({
-        sectionIndex: index,
-        itemIndex: 0,
-        viewOffset: 10,
-    });
+  const scrollToCategory = (title) => {
+    setActiveCategory(title);
+    const sectionIndex = menu.findIndex(section => section.title === title);
+    if (sectionListRef.current && sectionIndex !== -1) {
+        sectionListRef.current.scrollToLocation({
+            sectionIndex: sectionIndex,
+            itemIndex: 0,
+            viewOffset: 10,
+            animated: true,
+        });
+    }
   };
 
   if (loading) {
@@ -140,32 +168,27 @@ const MenuScreen = ({route, navigation}) => {
         value={searchQuery}
         onChangeText={setSearchQuery}
       />
-      
-      {!searchQuery.trim() && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryContainer}>
-            <TouchableOpacity
-                style={[styles.categoryButton, activeCategory === 'all' && styles.categoryButtonActive]}
-                onPress={() => {
-                    setActiveCategory('all');
-                    sectionListRef.current.scrollToLocation({ sectionIndex: 0, itemIndex: 0 });
-                }}>
-                <Text style={[styles.categoryText, activeCategory === 'all' && styles.categoryTextActive]}>All</Text>
-            </TouchableOpacity>
-            {menu.map((category, index) => (
-                <TouchableOpacity
-                    key={category.title}
-                    style={[styles.categoryButton, activeCategory === category.title && styles.categoryButtonActive]}
-                    onPress={() => scrollToCategory(index)}>
-                    <Text style={[styles.categoryText, activeCategory === category.title && styles.categoryTextActive]}>{category.title}</Text>
-                </TouchableOpacity>
-            ))}
-        </ScrollView>
-      )}
-
+      <View style={{height:60}}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryContainer}>
+          <TouchableOpacity
+              style={[styles.categoryButton, activeCategory === 'all' && styles.categoryButtonActive]}
+              onPress={() => setActiveCategory('all')}>
+              <Text style={[styles.categoryText, activeCategory === 'all' && styles.categoryTextActive]}>All</Text>
+          </TouchableOpacity>
+          {menu.map((category) => (
+              <TouchableOpacity
+                  key={category.title}
+                  style={[styles.categoryButton, activeCategory === category.title && styles.categoryButtonActive]}
+                  onPress={() => scrollToCategory(category.title)}>
+                  <Text style={[styles.categoryText, activeCategory === category.title && styles.categoryTextActive]}>{category.title}</Text>
+              </TouchableOpacity>
+          ))}
+      </ScrollView>
+      </View>
       <SectionList
         ref={sectionListRef}
         sections={filteredMenu}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item, index) => item.id.toString() + index}
         renderItem={({item}) => (
           <MenuItem
             item={item}
@@ -176,7 +199,7 @@ const MenuScreen = ({route, navigation}) => {
           />
         )}
         renderSectionHeader={({section: {title}}) => (
-            !searchQuery.trim() ? <Text style={styles.sectionHeader}>{title}</Text> : null
+            <Text style={styles.sectionHeader}>{title}</Text>
         )}
         contentContainerStyle={styles.listContainer}
         ListEmptyComponent={
@@ -244,27 +267,39 @@ const styles = StyleSheet.create({
     ...FONTS.body4,
     fontWeight: 'bold',
   },
+  // --- AESTHETIC CHANGES START HERE ---
   categoryContainer: {
-      paddingHorizontal: 10,
-      paddingBottom: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    paddingBottom: 15,
+    maxHeight:60,
   },
   categoryButton: {
-      paddingVertical: 8,
-      paddingHorizontal: 16,
-      marginRight: 10,
+      paddingVertical: 4,      // Reduced vertical padding for less height
+      paddingHorizontal: 14,   // Adjusted horizontal padding
+      marginRight: 8,
       backgroundColor: COLORS.white,
-      borderRadius: 20,
+      borderRadius: 16,        // Slightly reduced border radius
       borderWidth: 1,
-      borderColor: COLORS.gray,
+      borderColor: '#e0e0e0',
+      justifyContent: 'center', // Center text vertically
+      alignItems: 'center',
+      height:40,
+      width:90,
   },
   categoryButtonActive: {
       backgroundColor: COLORS.primary,
       borderColor: COLORS.primaryDark,
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.15,
+      shadowRadius: 1.5,
   },
   categoryText: {
-    ...FONTS.body4,
+    fontSize: 16,             // Reduced font size for a smaller look
     color: COLORS.secondary,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   categoryTextActive: {
     color: COLORS.white,
@@ -273,10 +308,11 @@ const styles = StyleSheet.create({
     ...FONTS.h2,
     color: COLORS.secondary,
     paddingHorizontal: 10,
-    paddingTop: 20,
+    paddingTop: 10,
     paddingBottom: 10,
     backgroundColor: COLORS.lightGray,
   }
+  // --- AESTHETIC CHANGES END HERE ---
 });
 
 export default MenuScreen;

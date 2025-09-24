@@ -7,7 +7,7 @@ import AppNavigator from './src/navigation/AppNavigator';
 const App = () => {
   return (
     <AuthProvider>
-      <OrderProvider> {/* <-- REPLACE CartProvider with OrderProvider */}
+      <OrderProvider>
         <NavigationContainer>
           <AppNavigator />
         </NavigationContainer>

@@ -9,7 +9,15 @@ export const OrderContext = createContext();
 const orderReducer = (state, action) => {
   const {activeTableId} = state;
   const newOrdersByTable = {...state.ordersByTable};
-  const currentOrder = newOrdersByTable[activeTableId] || { newItems: [], placedItems: [] };
+  let currentOrder;
+
+  // Ensure currentOrder is initialized properly even if activeTableId is null
+  if (activeTableId) {
+      currentOrder = newOrdersByTable[activeTableId] || { newItems: [], placedItems: [] };
+  } else {
+      currentOrder = { newItems: [], placedItems: [] };
+  }
+
 
   switch (action.type) {
     case 'SET_STATE':
@@ -18,61 +26,65 @@ const orderReducer = (state, action) => {
     case 'SET_TABLE':
       return {...state, activeTableId: action.payload.tableId};
 
-    case 'ADD_ITEM':
-      // ... (this case remains the same)
+    case 'ADD_ITEM': {
       const {item, quantity, remarks} = action.payload;
       const itemRemarks = remarks || null; 
 
-      const existingIndex = currentOrder.newItems.findIndex(
+      const newItems = [...currentOrder.newItems];
+      const existingIndex = newItems.findIndex(
         i => i.id === item.id && i.remarks === itemRemarks
       );
 
       if (existingIndex > -1) {
-        currentOrder.newItems[existingIndex].qty += quantity;
+        const updatedItem = { ...newItems[existingIndex], qty: newItems[existingIndex].qty + quantity };
+        newItems[existingIndex] = updatedItem;
       } else {
-        currentOrder.newItems.push({...item, qty: quantity, remarks: itemRemarks});
+        newItems.push({...item, qty: quantity, remarks: itemRemarks});
       }
       
-      newOrdersByTable[activeTableId] = currentOrder;
+      if (activeTableId) newOrdersByTable[activeTableId] = { ...currentOrder, newItems };
       return {...state, ordersByTable: newOrdersByTable};
+    }
     
-    case 'REMOVE_ITEM':
-      // ... (this case remains the same)
-      currentOrder.newItems = currentOrder.newItems.filter(
+    case 'REMOVE_ITEM': {
+      const newItems = currentOrder.newItems.filter(
         item => !(item.id === action.payload.id && item.remarks === action.payload.remarks)
       );
-      newOrdersByTable[activeTableId] = currentOrder;
+      if (activeTableId) newOrdersByTable[activeTableId] = { ...currentOrder, newItems };
       return {...state, ordersByTable: newOrdersByTable};
+    }
 
-    case 'UPDATE_QTY':
-      // ... (this case remains the same)
-      currentOrder.newItems = currentOrder.newItems
+    case 'UPDATE_QTY': {
+      const newItems = currentOrder.newItems
         .map(item =>
           (item.id === action.payload.id && item.remarks === action.payload.remarks)
             ? {...item, qty: action.payload.qty}
             : item
         )
         .filter(item => item.qty > 0); 
-      newOrdersByTable[activeTableId] = currentOrder;
+      if (activeTableId) newOrdersByTable[activeTableId] = { ...currentOrder, newItems };
       return {...state, ordersByTable: newOrdersByTable};
+    }
 
-    // --- ADD THIS NEW CASE ---
     case 'SET_PLACED_ITEMS':
-      currentOrder.placedItems = action.payload.items;
-      newOrdersByTable[activeTableId] = currentOrder;
+      if (activeTableId) {
+        newOrdersByTable[activeTableId] = { ...currentOrder, placedItems: action.payload.items };
+      }
       return {...state, ordersByTable: newOrdersByTable};
-    // --- END OF NEW CASE ---
 
     case 'SEND_TO_KITCHEN_SUCCESS':
-      // Clear newItems, placedItems will be updated by a fetch
-      newOrdersByTable[activeTableId] = {
-        newItems: [],
-        placedItems: newOrdersByTable[activeTableId]?.placedItems || [],
-      };
+      if (activeTableId && newOrdersByTable[activeTableId]) {
+        newOrdersByTable[activeTableId] = {
+          ...newOrdersByTable[activeTableId],
+          newItems: [],
+        };
+      }
       return {...state, ordersByTable: newOrdersByTable};
 
     case 'CLEAR_TABLE_ORDERS':
-        delete newOrdersByTable[activeTableId];
+        if (action.payload.tableId && newOrdersByTable[action.payload.tableId]) {
+            delete newOrdersByTable[action.payload.tableId];
+        }
         return {...state, ordersByTable: newOrdersByTable};
 
     default:
@@ -87,32 +99,41 @@ export const OrderProvider = ({children}) => {
   });
   
   const [isOrderLoading, setOrderLoading] = useState(true);
-  const {token} = useContext(AuthContext);
+  const {token, isLoading: isAuthLoading} = useContext(AuthContext);
 
   useEffect(() => {
     const loadState = async () => {
-      setOrderLoading(true);
-      if (token) {
-        const savedState = await AsyncStorage.getItem(`waiterOrders_${token}`);
-        if (savedState) {
-          // Only load the newItems, placedItems will be fetched
-          const parsed = JSON.parse(savedState);
-          Object.keys(parsed.ordersByTable).forEach(tableId => {
-            if(parsed.ordersByTable[tableId]) {
-              parsed.ordersByTable[tableId].placedItems = [];
-            }
-          });
-          dispatch({type: 'SET_STATE', payload: parsed});
-        }
+      if (isAuthLoading) {
+        return; // Wait for authentication to resolve
       }
-      setOrderLoading(false);
+      if (token) {
+        setOrderLoading(true);
+        try {
+          const savedState = await AsyncStorage.getItem(`waiterOrders_${token}`);
+          if (savedState) {
+            const parsed = JSON.parse(savedState);
+            Object.keys(parsed.ordersByTable).forEach(tableId => {
+              if(parsed.ordersByTable[tableId]) {
+                parsed.ordersByTable[tableId].placedItems = [];
+              }
+            });
+            dispatch({type: 'SET_STATE', payload: parsed});
+          }
+        } catch (e) {
+          console.error("Failed to load order state:", e);
+        } finally {
+          setOrderLoading(false);
+        }
+      } else {
+        // No token, so not loading anything.
+        setOrderLoading(false);
+      }
     };
     loadState();
-  }, [token]);
+  }, [token, isAuthLoading]);
 
   useEffect(() => {
-    if (token && !isOrderLoading) {
-      // Only save the newItems to storage
+    if (token && !isAuthLoading && !isOrderLoading) {
       const stateToSave = JSON.parse(JSON.stringify(state));
       Object.keys(stateToSave.ordersByTable).forEach(tableId => {
          if(stateToSave.ordersByTable[tableId]) {
@@ -121,7 +142,7 @@ export const OrderProvider = ({children}) => {
       });
       AsyncStorage.setItem(`waiterOrders_${token}`, JSON.stringify(stateToSave));
     }
-  }, [state, token, isOrderLoading]);
+  }, [state, token, isAuthLoading, isOrderLoading]);
 
   const removeItem = (id, remarks) => {
     dispatch({type: 'REMOVE_ITEM', payload: {id, remarks: remarks || null}});
@@ -139,7 +160,6 @@ export const OrderProvider = ({children}) => {
     dispatch({type: 'ADD_ITEM', payload: {item, quantity, remarks}});
   };
 
-  // --- ADD THIS NEW FUNCTION ---
   const refreshPlacedItems = async () => {
     if (!state.activeTableId || !token) {
       return;
@@ -169,14 +189,14 @@ export const OrderProvider = ({children}) => {
     const response = await submitOrder(orderData);
     if (response) {
       dispatch({type: 'SEND_TO_KITCHEN_SUCCESS'});
-      await refreshPlacedItems(); // <-- Refresh from server right after sending
+      await refreshPlacedItems();
       return response;
     }
     throw new Error('Failed to submit order.');
   };
   
-  const clearTableOrders = () => {
-      dispatch({type: 'CLEAR_TABLE_ORDERS'});
+  const clearTableOrders = (tableId) => {
+      dispatch({type: 'CLEAR_TABLE_ORDERS', payload: { tableId }});
   }
 
   const activeOrder = state.ordersByTable[state.activeTableId] || {

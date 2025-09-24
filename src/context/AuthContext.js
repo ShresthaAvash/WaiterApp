@@ -1,6 +1,6 @@
 import React, {createContext, useState, useEffect} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {loginWaiter, getWaiterProfile} from '../api/auth'; // Import getWaiterProfile
+import {loginWaiter, getWaiterProfile} from '../api/auth';
 
 export const AuthContext = createContext();
 
@@ -10,50 +10,57 @@ export const AuthProvider = ({children}) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for stored token and fetch user profile on app start
-    const loadStoredData = async () => {
+    // This function runs once when the app starts
+    const bootstrapAsync = async () => {
+      let userToken;
       try {
-        const storedToken = await AsyncStorage.getItem('waiterToken');
-        if (storedToken) {
-          // Set token first so API calls are authenticated
-          setToken(storedToken);
-          // Fetch waiter data using the token
+        userToken = await AsyncStorage.getItem('waiterToken');
+        if (userToken) {
+          // If a token is found, validate it by fetching the user profile
+          setToken(userToken);
           const profile = await getWaiterProfile();
           setWaiter(profile);
         }
       } catch (e) {
-        console.error("Failed to load token/profile.", e);
-        // If fetching the profile fails, the token is likely invalid, so clear it.
+        // This means the token was invalid or the API failed.
+        console.error('Restoring token failed, signing out.', e);
         await AsyncStorage.removeItem('waiterToken');
         setToken(null);
         setWaiter(null);
-      } finally {
-        setIsLoading(false);
       }
+      // Signal that the initial loading is complete
+      setIsLoading(false);
     };
-    loadStoredData();
+
+    bootstrapAsync();
   }, []);
 
   const login = async (email, password) => {
+    setIsLoading(true);
     try {
       const data = await loginWaiter(email, password);
       if (data.access_token) {
         setToken(data.access_token);
-        setWaiter(data.waiter); // API returns waiter details on login
+        setWaiter(data.waiter);
         await AsyncStorage.setItem('waiterToken', data.access_token);
+        setIsLoading(false);
         return true;
       }
+      setIsLoading(false);
       return false;
     } catch (error) {
       console.error("Login failed in AuthContext:", error);
+      setIsLoading(false);
       return false;
     }
   };
 
   const logout = async () => {
+    setIsLoading(true);
     setToken(null);
     setWaiter(null);
     await AsyncStorage.removeItem('waiterToken');
+    setIsLoading(false);
   };
 
   return (
